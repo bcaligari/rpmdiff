@@ -1,0 +1,327 @@
+#!/usr/bin/env python3
+#
+# Report on the differences between two lists of RPMs.
+#    These can be:
+#      - the output of `rpm -qa`
+#      - rpm.txt from a supportconfig
+#      - an unpacked supportconfig directory
+#
+# Initial version by: Brendon Caligari <caligari@cypraea.co.uk>
+#
+# Adapted from: https://github.com/bcaligari/derpm/
+# ... to work as a stand alone script
+# ... using the bundled Python 3.6+ and standard library
+# ... specifically for Rolf :-)
+#
+# License: GNU Affero General Public License
+#      https://www.gnu.org/licenses/agpl-3.0.en.html
+#
+
+import re
+import logging
+import argparse
+from pathlib import Path
+from textwrap import dedent
+
+
+def ascii_table(table, colnames=None):
+    """Converts a table to ascii."""
+    # convert itertor to a list of lists of strings
+    all_rows = [[*map(str, row)] for row in table]
+    # check the right number of optional column names were passed
+    if colnames and table:
+        if len(colnames) != len(all_rows[0]):
+            raise IndexError
+    out = []
+    if not table and not colnames:
+        return out
+    # work out the width for each column
+    ncol = len(colnames) if colnames else len(all_rows[0])
+    col_max = [0 for _ in range(ncol)]
+    for row in all_rows:
+        for col in range(ncol):
+            col_max[col] = max(col_max[col], len(row[col]))
+    if colnames:
+        for col in range(ncol):
+            col_max[col] = max(col_max[col], len(colnames[col]))
+    # print out each line justified and separated
+    if colnames:
+        ruling = ["" for _ in range(ncol)]
+        justified_header = map(lambda x: x[0].ljust(x[1]), zip(colnames, col_max))
+        justified_ruling = map(lambda x: x[0].ljust(x[1], "-"), zip(ruling, col_max))
+        out.append(" | ".join(justified_header).rstrip())
+        out.append(" | ".join(justified_ruling).rstrip())
+    for row in all_rows:
+        justified_row = map(lambda x: x[0].ljust(x[1]), zip(row, col_max))
+        out.append(" | ".join(justified_row).rstrip())
+    return out
+
+
+class VerTuple(object):
+    """An orderable dot or plus sign separated tuple."""
+
+    def __init__(self, ver_string):
+        self._str = ver_string  # to preserve + or . delimiters
+        self._elements = re.split(r"[.+]", ver_string)
+
+    def _compare(self, other):
+        for i in range(max(len(self._elements), len(other._elements))):
+            a = self._elements[i] if i < len(self._elements) else None
+            b = other._elements[i] if i < len(other._elements) else None
+            if a is None:
+                return -1
+            if b is None:
+                return 1
+            if a.isnumeric() and b.isnumeric():
+                if int(a) < int(b):
+                    return -1
+                elif int(a) > int(b):
+                    return 1
+            else:
+                if a < b:
+                    return -1
+                elif a > b:
+                    return 1
+        return 0
+
+    def __lt__(self, other):
+        return self._compare(other) == -1
+
+    def __eq__(self, other):
+        return self._compare(other) == 0
+
+    def __gt__(self, other):
+        return self._compare(other) == 1
+
+    def __le__(self, other):
+        return self._compare(other) != 1
+
+    def __ge__(self, other):
+        return self._compare(other) != -1
+
+    def __str__(self):
+        return self._str
+
+    def __hash__(self):
+        return hash(self._str)
+
+
+class RPM(object):
+    """An RPM object representation."""
+
+    def __init__(self, name, version, release, arch):
+        """Initialise RPM from constituent filename parts."""
+        self._name = name
+        self._version = VerTuple(version)
+        self._release = VerTuple(release)
+        self._arch = arch
+
+    @classmethod
+    def from_name(cls, fullname):
+        """Initialise RPM from <name>-<version>-<release>.<arch>[.rpm]"""
+        fullname = fullname.strip()
+        fullname = re.sub(r"\.rpm$", "", fullname)
+        m = re.match(r"^(.+)-(.+)-(.+?)\.([a-z][a-z0-9_]+?)$", fullname)
+        if m:
+            return cls(m[1], m[2], m[3], m[4])
+        else:
+            return None
+
+    def __lt__(self, other):
+        return (self._name, self._version, self._release, self._arch) < (
+            other._name,
+            other._version,
+            other._release,
+            other._arch,
+        )
+
+    def __eq__(self, other):
+        return (self._name, self._version, self._release, self._arch) == (
+            other._name,
+            other._version,
+            other._release,
+            other._arch,
+        )
+
+    def __repr__(self):
+        return repr((self._name, self._version, self._release, self._arch))
+
+    def __str__(self):
+        return f"{self._name}-{self._version}-{self._release}.{self._arch}"
+
+
+class RPMlist(object):
+    """A queryable collection of RPM objects."""
+
+    def __init__(self, rpmlist):
+        """Initialise an RPMlist"""
+        self._rpms = dict()
+        for rpm in rpmlist:
+            if not rpm._name in self._rpms:
+                self._rpms[rpm._name] = dict()
+            if not rpm._arch in self._rpms[rpm._name]:
+                self._rpms[rpm._name][rpm._arch] = dict()
+            if not rpm._version in self._rpms[rpm._name][rpm._arch]:
+                self._rpms[rpm._name][rpm._arch][rpm._version] = list()
+            self._rpms[rpm._name][rpm._arch][rpm._version].append(rpm._release)
+
+    def get_archs(self, name):
+        """Get list of architectures for a name."""
+        return self._rpms[name].keys() if name in self._rpms else list()
+
+    def get_names(self):
+        """Get list of names of RPMs."""
+        return self._rpms.keys()
+
+    def get_versions(self, name, arch):
+        """Get list of versions for a name and arch."""
+        versions = []
+        if name in self._rpms:
+            if arch in self._rpms[name]:
+                for version in self._rpms[name][arch]:
+                    for release in self._rpms[name][arch][version]:
+                        versions.append(tuple([version, release]))
+        return versions
+
+    @classmethod
+    def from_name_list(cls, rpm_list):
+        """Build a list of RPM objects from a list of rpm names."""
+        rpms = []
+        for name in rpm_list:
+            rpm = RPM.from_name(name)
+            if not rpm:
+                logging.warning(f"Unable to parse {name}.")
+            else:
+                rpms.append(rpm)
+        return cls(rpms)
+
+
+def diff_report(a, b):
+    """Compare against another list of RPMs and generate a report"""
+    # Build a sorted list of the package names in both lists
+    results = []
+    for name in sorted(list(set(a.get_names()) | set(b.get_names())), key=str.casefold):
+        for arch in sorted(list(set(a.get_archs(name)) | set(b.get_archs(name))), key=str.casefold):
+            code = "??"
+            a_vers = a.get_versions(name, arch)
+            b_vers = b.get_versions(name, arch)
+            if max(len(a_vers), len(b_vers)) == 1:
+                # single occurrence of RPM
+                a_str = f"{a_vers[0][0]}-{a_vers[0][1]}" if len(a_vers) else ""
+                b_str = f"{b_vers[0][0]}-{b_vers[0][1]}" if len(b_vers) else ""
+                if len(a_vers) == 1 and len(b_vers) == 0:
+                    code = "++"
+                elif len(a_vers) == 0 and len(b_vers) == 1:
+                    code = "--"
+                else:
+                    if a_vers == b_vers:
+                        code = "=="
+                    elif a_vers < b_vers:
+                        code = "<<"
+                    else:
+                        code = ">>"
+                results.append([code, name, arch, a_str, b_str])
+            else:
+                # multiversion RPM territory (e.g. kernel)
+                all_vers = sorted(list(set(a_vers) | set(b_vers)))
+                for ver in all_vers:
+                    (a_str, b_str) = ("", "")
+                    ver_str = f"{ver[0]}-{ver[1]}"
+                    if ver in set(a_vers) and ver in set(b_vers):
+                        (a_str, b_str) = (ver_str, ver_str)
+                        code = ":="
+                    elif ver in set(a_vers):
+                        a_str = ver_str
+                        code = ":+"
+                    else:
+                        b_str = ver_str
+                        code = ":-"
+                    results.append([code, name, arch, a_str, b_str])
+    return results
+
+
+def parse_rpm_list(rpmstream, friendly_name):
+    """
+    Read a list of rpms from a text file.
+
+    Tries to properly handle:
+    - plain `rpm -qa` output
+    - `rpm.txt` from supportconfig tarball (uses the `rpm -qa --last` section)
+    """
+    rpm_list = []
+    all_lines = rpmstream.readlines()
+    if all_lines[0].startswith("#==[ Command ]===="):
+        logging.debug(f"Identified {friendly_name} as an rpm.txt from a supportconfig.")
+        in_rpmqa_last = False
+        for line in all_lines:
+            if not in_rpmqa_last:
+                in_rpmqa_last = line.startswith("# /bin/rpm -qa --last")
+                continue
+            if line.startswith("#"):
+                break
+            if not line.strip():
+                break
+            m = re.match(r"^(.+?)\s", line)
+            if m:
+                rpm_list.append(m[1])
+        return rpm_list
+    else:
+        logging.debug(f"Assuming {friendly_name} is just an ordinary list of rpms.")
+        for line in all_lines:
+            _line = line.strip()
+            if _line:
+                rpm_list.append(_line)
+    return rpm_list
+
+
+if __name__ == "__main__":
+    """Version diff between two lists of RPMs."""
+    parser = argparse.ArgumentParser(
+        prog="rpmdiff",
+        description="Version diff between two lists of RPMs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=dedent(
+            """
+            Legend:
+              ++   present in first but not second
+              --   present in second but not first
+              ==   present in both at same revision
+              <<   version in first lower than one in second
+              >>   version in first higher than one in second
+              :+   multiversion install present in first but not second
+              :-   multiversion install present in second but not first
+              :=   multiversion install present in both
+            """
+        ),
+    )
+    parser.add_argument(
+        "rpmlist0",
+        help="An output of 'rpm -qa', or 'rpm.txt' from supportconfig",
+        type=argparse.FileType("r", encoding="UTF-8"),
+    )
+    parser.add_argument(
+        "rpmlist1",
+        help="Another output of 'rpm -qa', or 'rpm.txt' from supportconfig",
+        type=argparse.FileType("r", encoding="UTF-8"),
+    )
+    args = parser.parse_args()
+
+    filename0 = Path(args.rpmlist0.name).name
+    filename1 = Path(args.rpmlist1.name).name
+    with args.rpmlist0 as f0, args.rpmlist1 as f1:
+        rpms0 = RPMlist.from_name_list(parse_rpm_list(f0, filename0))
+        rpms1 = RPMlist.from_name_list(parse_rpm_list(f1, filename1))
+
+    diff = diff_report(rpms0, rpms1)
+
+    try:
+        print(
+            "\n".join(
+                ascii_table(
+                    diff,
+                    colnames=["", "package", "arch", filename0, filename1]
+                )
+            )
+        )
+    except BrokenPipeError:
+        pass
