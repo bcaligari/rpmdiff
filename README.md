@@ -2,14 +2,13 @@
 
 Takes two lists of RPMs and reports on version differences.
 
-Adapted from: [derpm](https://github.com/bcaligari/derpm/), to:
+Adapted from [derpm](https://github.com/bcaligari/derpm/) to:
 
     * work as a stand alone script,
     * using the bundled Python 3.6+ and standard library,
 
 ## Usage
 
-    ```{text}
     usage: rpmdiff [-h] rpmlist0 rpmlist1
 
     Version diff between two lists of RPMs
@@ -30,4 +29,3 @@ Adapted from: [derpm](https://github.com/bcaligari/derpm/), to:
       :+   multiversion install present in first but not second
       :-   multiversion install present in second but not first
       :=   multiversion install present in both
-    ```
