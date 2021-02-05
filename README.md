@@ -2,10 +2,10 @@
 
 Takes two lists of RPMs and reports on version differences.
 
-Adapted from [derpm](https://github.com/bcaligari/derpm/) to:
+Copyright (c) 2020-2021 Brendon Caligari <caligari@cypraea.co.uk>
 
-    * work as a stand alone script,
-    * using the bundled Python 3.6+ and standard library,
+    License: GNU Affero General Public License
+        https://www.gnu.org/licenses/agpl-3.0.en.html
 
 ## Usage
 
