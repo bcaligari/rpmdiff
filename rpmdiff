@@ -12,6 +12,7 @@
 #      https://www.gnu.org/licenses/agpl-3.0.en.html
 #
 
+import sys
 import re
 import logging
 import argparse
@@ -79,17 +80,17 @@ class VerTuple(object):
                     return 1
         return 0
 
-    def __lt__(self, other):
-        return self._compare(other) == -1
-
     def __eq__(self, other):
         return self._compare(other) == 0
 
-    def __gt__(self, other):
-        return self._compare(other) == 1
+    def __lt__(self, other):
+        return self._compare(other) == -1
 
     def __le__(self, other):
         return self._compare(other) != 1
+
+    def __gt__(self, other):
+        return self._compare(other) == 1
 
     def __ge__(self, other):
         return self._compare(other) != -1
@@ -235,38 +236,67 @@ def diff_report(a, b):
     return results
 
 
-def parse_rpm_list(rpmstream, friendly_name):
-    """
-    Read a list of rpms from a text file.
+class RPMListReader():
+    """Parses a source for a hostname and an RPMList"""
 
-    Tries to properly handle:
-    - plain `rpm -qa` output
-    - `rpm.txt` from supportconfig tarball (uses the `rpm -qa --last` section)
+    def __init__(self, src, name=None):
+        self._filepath = Path(src)
+        if name:
+            self._name = name
+        else:
+            self._name = self._filepath.name
+        self._rpm_filename_list = list()
+
+    @property
+    def rpms(self):
+        return RPMlist.from_name_list(self._rpm_filename_list)
+
+    @property
+    def name(self):
+        return self._name
+
+
+class RPMListSupportConfigRPMTXT(RPMListReader):
+    """RPMListReader for an rpm.txt from supportconfig"""
+
+    def __init__(self, src, name=None):
+        super().__init__(src, name)
+        with open(self._filepath) as f:
+            in_rpmqa_last = False
+            for line in f.readlines():
+                if not in_rpmqa_last:
+                    in_rpmqa_last = line.startswith("# /bin/rpm -qa --last")
+                    continue
+                if line.startswith("#"):
+                    break
+                if not line.strip():
+                    break
+                m = re.match(r"^(.+?)\s", line)
+                if m:
+                    self._rpm_filename_list.append(m[1])
+
+
+class RPMListPlain(RPMListReader):
+    """RPMListReader for output of 'rpm -qa'"""
+
+    def __init__(self, src, name=None):
+        super().__init__(src, name)
+        with open(self._filepath) as f:
+            for line in f.readlines():
+                m = re.match(r"^(.+?)\s*$", line)
+                if m:
+                    self._rpm_filename_list.append(m[1])
+
+
+def rpm_list_source(rpmsource):
     """
-    rpm_list = []
-    all_lines = rpmstream.readlines()
-    if all_lines[0].startswith("#==[ Command ]===="):
-        logging.debug(f"Identified {friendly_name} as an rpm.txt from a supportconfig.")
-        in_rpmqa_last = False
-        for line in all_lines:
-            if not in_rpmqa_last:
-                in_rpmqa_last = line.startswith("# /bin/rpm -qa --last")
-                continue
-            if line.startswith("#"):
-                break
-            if not line.strip():
-                break
-            m = re.match(r"^(.+?)\s", line)
-            if m:
-                rpm_list.append(m[1])
-        return rpm_list
-    else:
-        logging.debug(f"Assuming {friendly_name} is just an ordinary list of rpms.")
-        for line in all_lines:
-            _line = line.strip()
-            if _line:
-                rpm_list.append(_line)
-    return rpm_list
+    Read a list of rpms from a source
+
+    """
+    with open(rpmsource) as f:
+        if f.readline().startswith("#==[ Command ]===="):
+            return RPMListSupportConfigRPMTXT(rpmsource)
+    return RPMListPlain(rpmsource)
 
 
 if __name__ == "__main__":
@@ -291,30 +321,25 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "rpmlist0",
-        help="An output of 'rpm -qa', or 'rpm.txt' from supportconfig",
-        type=argparse.FileType("r", encoding="UTF-8"),
+        help="A list of RPMs"
     )
     parser.add_argument(
         "rpmlist1",
-        help="Another output of 'rpm -qa', or 'rpm.txt' from supportconfig",
-        type=argparse.FileType("r", encoding="UTF-8"),
+        help="A second list of RPMs"
     )
     args = parser.parse_args()
 
-    filename0 = Path(args.rpmlist0.name).name
-    filename1 = Path(args.rpmlist1.name).name
-    with args.rpmlist0 as f0, args.rpmlist1 as f1:
-        rpms0 = RPMlist.from_name_list(parse_rpm_list(f0, filename0))
-        rpms1 = RPMlist.from_name_list(parse_rpm_list(f1, filename1))
+    rpm_source_0 = rpm_list_source(args.rpmlist0)
+    rpm_source_1 = rpm_list_source(args.rpmlist1)
 
-    diff = diff_report(rpms0, rpms1)
+    diff = diff_report(rpm_source_0.rpms, rpm_source_1.rpms)
 
     try:
         print(
             "\n".join(
                 ascii_table(
                     diff,
-                    colnames=["", "package", "arch", filename0, filename1]
+                    colnames=["", "package", "arch", rpm_source_0.name, rpm_source_1.name]
                 )
             )
         )
