@@ -236,7 +236,7 @@ def diff_report(a, b):
     return results
 
 
-class RPMListReader():
+class RPMListReader(object):
     """Parses a source for a hostname and an RPMList"""
 
     def __init__(self, src, name=None):
@@ -288,14 +288,41 @@ class RPMListPlain(RPMListReader):
                     self._rpm_filename_list.append(m[1])
 
 
+class RPMListSupportConfigRPMDir(RPMListSupportConfigRPMTXT):
+    """RPMListReader for unpacked supportconfig"""
+
+    def __init__(self, src, name=None):
+        src_path = Path(src)
+        rpm_txt = f"{Path(src_path, 'rpm.txt')}"
+        basic_environment_txt = f"{Path(src_path, 'basic-environment.txt')}"
+        if Path(basic_environment_txt).is_file():
+            with open(basic_environment_txt) as f:
+                for line in f.readlines():
+                    m = re.match(r"^Linux (.+?)\s", line)
+                    if m:
+                        name = m[1]
+                        break
+        super().__init__(rpm_txt, name)
+
+
 def rpm_list_source(rpmsource):
     """
     Read a list of rpms from a source
 
+    Tries to work out whether it's a supportconfig or plain rpm -qa output
+    and return an appropriate RPMListReader object.
     """
+    source_path = Path(rpmsource)
+    if not source_path.exists():
+        raise FileNotFoundError
+    if source_path.is_dir():
+        return RPMListSupportConfigRPMDir(rpmsource)
+    # is it a binary file?
+    # is it an rpm.txt?
     with open(rpmsource) as f:
-        if f.readline().startswith("#==[ Command ]===="):
-            return RPMListSupportConfigRPMTXT(rpmsource)
+        for line in f.readlines():
+            if line.startswith("#==[ Command ]===="):
+                return RPMListSupportConfigRPMTXT(rpmsource)
     return RPMListPlain(rpmsource)
 
 
@@ -321,11 +348,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "rpmlist0",
-        help="A list of RPMs"
+        help="First list of RPMs"
     )
     parser.add_argument(
         "rpmlist1",
-        help="A second list of RPMs"
+        help="Second list of RPMs"
     )
     args = parser.parse_args()
 
