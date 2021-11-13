@@ -317,12 +317,12 @@ class RPMListSupportconfigTarBall(RPMListSupportConfigDir):
             logging.debug(f"Unpacking {src} to {tmp_dir}")
             with tarfile.open(src, mode="r:*") as tarball:
                 for member in tarball.getnames():
-                    m = re.match(r'([^/]*)/rpm.txt$', member)
+                    m = re.match(r"([^/]*)/rpm.txt$", member)
                     if m:
                         rpmtxt_subdir = m[1]
                         tarball.extract(member, path=tmp_dir, set_attrs=False)
                         break
-                for other_file in [ f'{rpmtxt_subdir}/basic-environment.txt' ]:
+                for other_file in [f"{rpmtxt_subdir}/basic-environment.txt"]:
                     tarball.extract(other_file, path=tmp_dir, set_attrs=False)
             super().__init__(f"{tmp_dir}/{rpmtxt_subdir}")
 
@@ -369,19 +369,9 @@ if __name__ == "__main__":
             """
         ),
     )
-    parser.add_argument(
-        "rpmlist0",
-        help="A list of RPMs"
-    )
-    parser.add_argument(
-        "rpmlist1",
-        help="Another list of RPMs to compare against"
-    )
-    parser.add_argument(
-        "--debug",
-        help="Enable some debug logging",
-        action="store_true"
-    )
+    parser.add_argument("rpmlist0", help="A list of RPMs")
+    parser.add_argument("rpmlist1", help="Another list of RPMs to compare against")
+    parser.add_argument("--debug", help="Enable some debug logging", action="store_true")
     args = parser.parse_args()
 
     if args.debug:
@@ -396,8 +386,7 @@ if __name__ == "__main__":
         print(
             "\n".join(
                 ascii_table(
-                    diff,
-                    colnames=["", "package", "arch", rpm_source_0.name, rpm_source_1.name]
+                    diff, colnames=["", "package", "arch", f"{rpm_source_0.name[:36]}", f"{rpm_source_1.name[:36]}"]
                 )
             )
         )

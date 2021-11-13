@@ -2,7 +2,7 @@
 
 Takes two lists of RPMs and reports on version differences.
 
-Copyright (c) 2020-2021 Brendon Caligari <caligari@cypraea.co.uk>
+Copyright (c) 2020-2021 Brendon Caligari \<caligari@cypraea.co.uk\>
 
     License: GNU Affero General Public License
         https://www.gnu.org/licenses/agpl-3.0.en.html
@@ -47,13 +47,19 @@ The list of RPMs can be:
 
 ### Examples
 
+#### Diff between two `rpm -qa` outputs
+
+```{text}
+rpmdiff rpmqa-nodea.txt rpmqa-nodeb.txt
+```
+
 #### Diff between two unpacked supportconfigs
 
 ```{text}
 rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz
 ```
 
-#### Diff between a packed and an unpacked supportconfigs
+#### Diff between a packed and an unpacked supportconfig
 
 ```{text}
 rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320
@@ -65,7 +71,14 @@ rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320
 rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz | grep -v '^.='
 ```
 
+#### Show multiversion packages only
+
+```{text}
+rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz | grep '^:='
+```
+
 ## Observations
 
-* Will hopefully work on openSUSE 15.3 or later with included Python 3.6+
+* Hostname inferred from `basic-environment.txt` within supportconfig if available.
+* Will hopefully work on openSUSE 15.3 or later with included Python 3.6+.
 * Limited error checking is carried out.
