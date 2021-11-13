@@ -9,8 +9,8 @@ Copyright (c) 2020-2021 Brendon Caligari <caligari@cypraea.co.uk>
 
 ## Use cases
 
+* Checking packages differences between a node and a baseline install.
 * Checking package differences between two cluster nodes.
-* Checking packages differences between a node and a baseline.
 
 ## Usage
 
@@ -21,10 +21,11 @@ Copyright (c) 2020-2021 Brendon Caligari <caligari@cypraea.co.uk>
 
     positional arguments:
       rpmlist0    A list of RPMs
-      rpmlist1    A second list of RPMs
+      rpmlist1    Another list of RPMs to compare against
 
     optional arguments:
       -h, --help  show this help message and exit
+      --debug DEBUG  Enable some debug logging
 
     Legend:
       ++   present in first but not second
@@ -40,20 +41,31 @@ Copyright (c) 2020-2021 Brendon Caligari <caligari@cypraea.co.uk>
 The list of RPMs can be:
 
 * The output of `rpm -qa`.
-* TODO: A supportconfig archive.
-* TODO: An expanded supportconfig directory.
 * The `rpm.txt` from a supportconfig archive.
+* A supportconfig archive.
+* An expanded supportconfig directory.
 
 ### Examples
+
+#### Diff between two unpacked supportconfigs
+
+```{text}
+rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz
+```
+
+#### Diff between a packed and an unpacked supportconfigs
+
+```{text}
+rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320
+```
 
 #### Show only mismatches
 
 ```{text}
-rpmdiff scc_ha12sp5a_211111_2319 scc_ha12sp5b_211111_2320 2> /dev/null | grep -v '^.='
+rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz | grep -v '^.='
 ```
 
 ## Observations
 
-* Will hopefully work on openSUSE 15.3 or later with included Python 3.
-* Limited error checking is done because it expects one to know what they're
-  doing.
+* Will hopefully work on openSUSE 15.3 or later with included Python 3.6+
+* Limited error checking is carried out.

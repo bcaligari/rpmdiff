@@ -16,8 +16,10 @@ import sys
 import re
 import logging
 import argparse
+import tarfile
 from pathlib import Path
 from textwrap import dedent
+from tempfile import TemporaryDirectory
 
 
 def ascii_table(table, colnames=None):
@@ -186,7 +188,7 @@ class RPMlist(object):
         for name in rpm_list:
             rpm = RPM.from_name(name)
             if not rpm:
-                logging.warning(f"Unable to parse {name}.")
+                logging.debug(f"Unable to parse RPM name {name}")
             else:
                 rpms.append(rpm)
         return cls(rpms)
@@ -288,13 +290,14 @@ class RPMListPlain(RPMListReader):
                     self._rpm_filename_list.append(m[1])
 
 
-class RPMListSupportConfigRPMDir(RPMListSupportConfigRPMTXT):
+class RPMListSupportConfigDir(RPMListSupportConfigRPMTXT):
     """RPMListReader for unpacked supportconfig"""
 
     def __init__(self, src, name=None):
         src_path = Path(src)
         rpm_txt = f"{Path(src_path, 'rpm.txt')}"
         basic_environment_txt = f"{Path(src_path, 'basic-environment.txt')}"
+        logging.debug(f"Looking for hostname in {basic_environment_txt}")
         if Path(basic_environment_txt).is_file():
             with open(basic_environment_txt) as f:
                 for line in f.readlines():
@@ -303,6 +306,25 @@ class RPMListSupportConfigRPMDir(RPMListSupportConfigRPMTXT):
                         name = m[1]
                         break
         super().__init__(rpm_txt, name)
+
+
+class RPMListSupportconfigTarBall(RPMListSupportConfigDir):
+    """RPMListReader for supportconfig tarball"""
+
+    def __init__(self, src, name=None):
+        rpmtxt_subdir = None
+        with TemporaryDirectory() as tmp_dir:
+            logging.debug(f"Unpacking {src} to {tmp_dir}")
+            with tarfile.open(src, mode="r:*") as tarball:
+                for member in tarball.getnames():
+                    m = re.match(r'([^/]*)/rpm.txt$', member)
+                    if m:
+                        rpmtxt_subdir = m[1]
+                        tarball.extract(member, path=tmp_dir, set_attrs=False)
+                        break
+                for other_file in [ f'{rpmtxt_subdir}/basic-environment.txt' ]:
+                    tarball.extract(other_file, path=tmp_dir, set_attrs=False)
+            super().__init__(f"{tmp_dir}/{rpmtxt_subdir}")
 
 
 def rpm_list_source(rpmsource):
@@ -316,13 +338,14 @@ def rpm_list_source(rpmsource):
     if not source_path.exists():
         raise FileNotFoundError
     if source_path.is_dir():
-        return RPMListSupportConfigRPMDir(rpmsource)
-    # is it a binary file?
-    # is it an rpm.txt?
-    with open(rpmsource) as f:
-        for line in f.readlines():
-            if line.startswith("#==[ Command ]===="):
-                return RPMListSupportConfigRPMTXT(rpmsource)
+        return RPMListSupportConfigDir(rpmsource)
+    try:
+        with open(rpmsource) as f:
+            for line in f.readlines():
+                if line.startswith("#==[ Command ]===="):
+                    return RPMListSupportConfigRPMTXT(rpmsource)
+    except UnicodeDecodeError:
+        return RPMListSupportconfigTarBall(rpmsource)
     return RPMListPlain(rpmsource)
 
 
@@ -348,13 +371,21 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "rpmlist0",
-        help="First list of RPMs"
+        help="A list of RPMs"
     )
     parser.add_argument(
         "rpmlist1",
-        help="Second list of RPMs"
+        help="Another list of RPMs to compare against"
+    )
+    parser.add_argument(
+        "--debug",
+        help="Enable some debug logging",
+        action="store_true"
     )
     args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     rpm_source_0 = rpm_list_source(args.rpmlist0)
     rpm_source_1 = rpm_list_source(args.rpmlist1)
