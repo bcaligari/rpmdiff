@@ -5,6 +5,7 @@
 #      - the output of `rpm -qa`
 #      - rpm.txt from a [SLES / opensuse] supportconfig
 #      - an unpacked supportconfig directory
+#      - a supportconfig tarball
 #
 # Copyright (c) 2020-2021 Brendon Caligari <caligari@cypraea.co.uk>
 #

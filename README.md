@@ -74,7 +74,7 @@ rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz | grep -v '^.=
 #### Show multiversion packages only
 
 ```{text}
-rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz | grep '^:='
+rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz | grep '^:'
 ```
 
 ## Observations
