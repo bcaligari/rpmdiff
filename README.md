@@ -44,6 +44,8 @@ The list of RPMs can be:
 * The `rpm.txt` from a supportconfig archive.
 * A supportconfig archive.
 * An expanded supportconfig directory.
+* An sos report archive.
+* An expanded sos report directory.
 
 ### Examples
 
@@ -80,5 +82,6 @@ rpmdiff scc_ha12sp5a_211111_2319.txz scc_ha12sp5b_211111_2320.txz | grep '^:'
 ## Observations
 
 * Hostname inferred from `basic-environment.txt` within supportconfig if available.
+* Hostname inferred from `uname` within sos report if available.
 * Will hopefully work on openSUSE 15.3 or later with included Python 3.6+.
 * Limited error checking is carried out.

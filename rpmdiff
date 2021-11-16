@@ -2,10 +2,12 @@
 #
 # Report on the differences between two lists of RPMs.
 #    These can be:
-#      - the output of `rpm -qa`
-#      - rpm.txt from a [SLES / opensuse] supportconfig
-#      - an unpacked supportconfig directory
-#      - a supportconfig tarball
+#      * The output of `rpm -qa`.
+#      * The `rpm.txt` from a supportconfig archive.
+#      * A supportconfig archive.
+#      * An expanded supportconfig directory.
+#      * An sos report archive.
+#      * An expanded sos report directory.
 #
 # Copyright (c) 2020-2021 Brendon Caligari <caligari@cypraea.co.uk>
 #
@@ -286,7 +288,7 @@ class RPMListPlain(RPMListReader):
         super().__init__(src, name)
         with open(self._filepath) as f:
             for line in f.readlines():
-                m = re.match(r"^(.+?)\s*$", line)
+                m = re.match(r"^([^-]+-[^-]+.[^\s]+)\s*", line)
                 if m:
                     self._rpm_filename_list.append(m[1])
 
@@ -302,11 +304,29 @@ class RPMListSupportConfigDir(RPMListSupportConfigRPMTXT):
         if Path(basic_environment_txt).is_file():
             with open(basic_environment_txt) as f:
                 for line in f.readlines():
-                    m = re.match(r"^Linux (.+?)\s", line)
+                    m = re.match(r"^([^-]+-[^-]+.+?)\s*", line)
                     if m:
                         name = m[1]
                         break
         super().__init__(rpm_txt, name)
+
+
+class RPMListSOSReportDir(RPMListPlain):
+    """RPMListReader for unpacked sosreport"""
+
+    def __init__(self, src, name=None):
+        src_path = Path(src)
+        installed_rpms = f"{Path(src_path, 'installed-rpms')}"
+        uname = f"{Path(src_path, 'uname')}"
+        logging.debug(f"Looking for hostname in {uname}")
+        if Path(uname).is_file():
+            with open(uname) as f:
+                for line in f.readlines():
+                    m = re.match(r"^Linux (.+?)\s", line)
+                    if m:
+                        name = m[1]
+                        break
+        super().__init__(installed_rpms, name)
 
 
 class RPMListSupportconfigTarBall(RPMListSupportConfigDir):
@@ -328,26 +348,78 @@ class RPMListSupportconfigTarBall(RPMListSupportConfigDir):
             super().__init__(f"{tmp_dir}/{rpmtxt_subdir}")
 
 
+class RPMListSOSReportTarBall(RPMListSOSReportDir):
+    """RPMListReader for sos report tarball"""
+
+    def __init__(self, src, name=None):
+        sos_subdir = None
+        with TemporaryDirectory() as tmp_dir:
+            logging.debug(f"Unpacking {src} to {tmp_dir}")
+            with tarfile.open(src, mode="r:*") as tarball:
+                for member in tarball.getnames():
+                    m = re.match(r"([^/]*)/installed-rpms$", member)
+                    if m:
+                        sos_subdir = m[1]
+                        break
+                for file in ["uname", "installed-rpms"]:
+                    with open(Path(tmp_dir, file), mode="wb") as f:
+                        f.write(tarball.extractfile(f"{sos_subdir}/{file}").read())
+            super().__init__(tmp_dir)
+
+
 def rpm_list_source(rpmsource):
     """
     Read a list of rpms from a source
 
-    Tries to work out whether it's a supportconfig or plain rpm -qa output
-    and return an appropriate RPMListReader object.
+    Tries to work out whether what kind of source it is and returns an
+    appropriate RPMListReader object.
     """
+    assume_tarball = False
     source_path = Path(rpmsource)
     if not source_path.exists():
         raise FileNotFoundError
+
     if source_path.is_dir():
-        return RPMListSupportConfigDir(rpmsource)
-    try:
-        with open(rpmsource) as f:
-            for line in f.readlines():
-                if line.startswith("#==[ Command ]===="):
-                    return RPMListSupportConfigRPMTXT(rpmsource)
-    except UnicodeDecodeError:
-        return RPMListSupportconfigTarBall(rpmsource)
-    return RPMListPlain(rpmsource)
+        if Path(source_path, 'rpm.txt').is_file():
+            logging.debug(f"Assuming {rpmsource} is an unpacked supportconfig.")
+            return RPMListSupportConfigDir(rpmsource)
+        if Path(source_path, 'installed-rpms').is_file():
+            logging.debug(f"Assuming {rpmsource} is an unpacked sos report.")
+            return RPMListSOSReportDir(rpmsource)
+        raise ValueError
+    
+    if source_path.is_file():
+        try:
+            with open(rpmsource) as f:
+                for line in f.readlines():
+                    if line.startswith("#==[ Command ]===="):
+                        logging.debug(f"Assuming {rpmsource} is an rpm.txt from a supportconfig.")
+                        return RPMListSupportConfigRPMTXT(rpmsource)
+        except UnicodeDecodeError:
+            assume_tarball = True
+
+    if not assume_tarball:
+        logging.debug(f"Assuming {rpmsource} is a plain list of RPMs.")
+        return RPMListPlain(rpmsource)
+    
+    tarball_handler = None
+    with tarfile.open(rpmsource, mode="r:*") as tarball:
+        for member in tarball.getnames():
+            m = re.match(r"([^/]*)/rpm.txt$", member)
+            if m:
+                logging.debug(f"Assuming {rpmsource} is a supportconfig tarball.")
+                tarball_handler = RPMListSupportconfigTarBall
+                break
+            m = re.match(r"([^/]*)/installed-rpms$", member)
+            if m:
+                logging.debug(f"Assuming {rpmsource} is an sos report tarball.")
+                tarball_handler = RPMListSOSReportTarBall
+                break
+    
+    if tarball_handler:
+        return tarball_handler(rpmsource)
+
+    raise ValueError
 
 
 if __name__ == "__main__":
