@@ -304,7 +304,7 @@ class RPMListSupportConfigDir(RPMListSupportConfigRPMTXT):
         if Path(basic_environment_txt).is_file():
             with open(basic_environment_txt) as f:
                 for line in f.readlines():
-                    m = re.match(r"^([^-]+-[^-]+.+?)\s*", line)
+                    m = re.match(r"^Linux (.+?)\s", line)
                     if m:
                         name = m[1]
                         break
